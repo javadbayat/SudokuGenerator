@@ -10,6 +10,10 @@ Math.randomEx = function(from, to) {
     return Math.round(Math.random() * (to - from)) + from;
 };
 
+Array.prototype.clear = function() {
+    this.splice(0, this.length);
+};
+
 var PER_SUDOKU = 0;
 var PER_GRID = 1;
 var PER_BOX = 2;
@@ -71,7 +75,7 @@ with (WSH) {
             break;
         case "G" :
             portion.scope = PER_GRID;
-            maxPortionSize = 81;
+            maxPortionSize = $n ? 72 : 81;
             break;
         default :
             portion.scope = PER_SUDOKU;
@@ -443,11 +447,120 @@ function erasePortion(sudoku, portion) {
     
     function eraseUnit() {
         if ("size" in portion)
-            var k = portion.size;
+            var x = portion.size;
         else
-            var k = Math.randomEx(portion.lBound, portion.uBound);
+            var x = Math.randomEx(portion.lBound, portion.uBound);
     
-        for (var i = 0; i < k; i++)
+        for (var i = 0; i < x; i++)
+            unit.pick().blank = true;
+    }
+}
+
+function $erasePortion($sudoku, portion) {
+    switch (portion.scope) {
+    case PER_SUDOKU :
+        var unit = [];
+        for (var i = 0; i < 5; i++) {
+            for (var j = 0; j < 9; j++) {
+                for (var k = 0; k < 9; k++) {
+                    var c = $sudoku[i][j][k];
+                    if (!c.copied) {
+                        unit.push(c);
+                        c.copied = true;
+                    }
+                }
+            }
+        }
+        
+        if ("size" in portion)
+            var x = portion.size;
+        else
+            var x = Math.randomEx(portion.lBound, portion.uBound);
+    
+        eraseUnit();
+        break;
+    case PER_GRID :
+        var unit = [];
+        for (var i = 0; i < 9; i++) {
+            for (var j = 0; j < 9; j++) {
+                $sudoku[$CENTRAL][i][j].foo = true;
+                unit.push($sudoku[$CENTRAL][i][j]);
+            }
+        }
+        
+        if ("size" in portion)
+            var x = portion.size;
+        else
+            var x = Math.randomEx(portion.lBound, portion.uBound);
+        
+        eraseUnit();
+        var cx = x;
+        
+        for (var k = 0; k < 5; k++) {
+            if (k == $CENTRAL)
+                continue;
+            
+            var m = 0;
+            unit.clear();
+            for (var i = 0; i < 9; i++) {
+                for (var j = 0; j < 9; j++) {
+                    var c = $sudoku[k][i][j];
+                    if (c.blank)
+                        m++;
+                    
+                    if (!c.foo)
+                        unit.push(c);
+                }
+            }
+            
+            if ("size" in portion)
+                var x = portion.size;
+            else
+                var x = Math.randomEx(portion.lBound, portion.uBound);
+            
+            x -= m;
+            if (x < 0)
+                x = cx - m;
+            
+            eraseUnit();
+        }
+        
+        break;
+    case PER_BOX :
+        for (var k = 0; k < 5; k++) {
+            for (var i = 0; i < 9; i += 3) {
+                for (var j = 0; j < 9; j += 3) {
+                    var unit = [
+                        $sudoku[k][i][j],
+                        $sudoku[k][i][j + 1],
+                        $sudoku[k][i][j + 2],
+                        $sudoku[k][i + 1][j],
+                        $sudoku[k][i + 1][j + 1],
+                        $sudoku[k][i + 1][j + 2],
+                        $sudoku[k][i + 2][j],
+                        $sudoku[k][i + 2][j + 1],
+                        $sudoku[k][i + 2][j + 2]
+                    ];
+                    
+                    if (!unit[0].copied) {
+                        unit[0].copied = true;
+                        
+                        if ("size" in portion)
+                            var x = portion.size;
+                        else
+                            var x = Math.randomEx(portion.lBound, portion.uBound);
+    
+                        eraseUnit();
+                    }
+                }
+            }
+        }
+        
+        break;
+    }
+    
+    function eraseUnit() {
+        for (var i = 0; i < x; i++)
             unit.pick().blank = true;
     }
 }
@@ -478,6 +591,8 @@ function $generateSudoku(portionToErase) {
     
     fillRemaining($getRemaining($sudoku[$UPPER_RIGHT]));
     fillRemaining($getRemaining($sudoku[$LOWER_LEFT]));
+    
+    $erasePortion($sudoku, portionToErase);
     
     return $sudoku;
 }
