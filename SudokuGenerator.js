@@ -26,7 +26,25 @@ var $UPPER_RIGHT = 1;
 var $LOWER_RIGHT = 4;
 var $LOWER_LEFT = 3;
 
+var wiaFormatTIFF = "{B96B3CB1-0728-11D3-9D7B-0000F81EF32E}";
+
+var ppBorderBottom = 3;
+var ppBorderLeft = 2;
+var ppBorderRight = 4;
+var ppBorderTop = 1;
+
+var RGB_GREEN = 0x50b000;
+var RGB_GRAY = 0xc0c0c0;
+
 with (WSH) {
+    var fso = CreateObject("Scripting.FileSystemObject");
+    var wshShell = CreateObject("WScript.Shell");
+
+    if (fso.GetBaseName(FullName).toLowerCase() != "cscript") {
+        showError("This program must be run using 'cscript.exe'.");
+        Quit(1);
+    }
+
     var namedArgs = Arguments.Named;
     if (namedArgs.Exists("NS")) {
         var n = parseInt(namedArgs("NS"));
@@ -126,15 +144,57 @@ with (WSH) {
     else
         var portion = { size: 0, scope: PER_SUDOKU };
     
+    var plainArgs = Arguments.Unnamed;
+    var ts = StdOut;
+    var tsIsFile = false;
+    var sudokus = null, $sudokus = null;
+    if (plainArgs.Count) {
+        var fileName = (new Enumerator(plainArgs)).item();
+        var fileExtension = fso.GetExtensionName(fileName).toLowerCase();
+        switch (fileExtension) {
+        case "bmp" :
+        case "dib" :
+        case "png" :
+        case "gif" :
+        case "jpg" :
+        case "jpeg" :
+        case "jpe" :
+        case "jfif" :
+        case "tif" :
+        case "tiff" :
+        case "wmf" :
+        case "emf" :
+            sudokus = [];
+            $sudokus = [];
+            break;
+        default :
+            ts = fso.OpenTextFile(fileName, 2, true);
+            tsIsFile = true;
+        }
+    }
+    
+    var includeSolution = namedArgs.Exists("IS");
+    var outputSolution = false;
     var nFailed = 0;
     for (var i = 0; i < n; i++) {
         try {
             var sudoku = generateSudoku(portion);
             
-            if (i)
-                StdOut.WriteBlankLines(1);
-            
-            outputSudoku(StdOut, sudoku);
+            if (sudokus)
+                sudokus.push(sudoku);
+            else {
+                if (i)
+                    ts.WriteBlankLines(1);
+                
+                outputSolution = false;
+                outputSudoku(ts, sudoku);
+                
+                if (includeSolution) {
+                    ts.WriteBlankLines(1);
+                    outputSolution = true;
+                    outputSudoku(ts, sudoku);
+                }
+            }
         }
         catch (err) {
             StdErr.WriteLine("[warn] " + err.message);
@@ -147,14 +207,28 @@ with (WSH) {
         try {
             var $sudoku = $generateSudoku(portion);
             
-            StdOut.WriteBlankLines(1);
-            $outputSudoku(StdOut, $sudoku);
+            if ($sudokus)
+                $sudokus.push($sudoku);
+            else {
+                ts.WriteBlankLines(1);
+                outputSolution = false;
+                $outputSudoku(ts, $sudoku);
+                
+                if (includeSolution) {
+                    ts.WriteBlankLines(1);
+                    outputSolution = true;
+                    $outputSudoku(ts, $sudoku);
+                }
+            }
         }
         catch (err) {
             StdErr.WriteLine("[warn] " + err.message);
             $nFailed++;
         }
     }
+    
+    if (tsIsFile)
+        ts.Close();
     
     if (nFailed) {
         beep(StdErr);
@@ -165,6 +239,9 @@ with (WSH) {
         beep(StdErr);
         StdErr.WriteLine("[warn] Failed to generate " + $nFailed + " of the Samurai sudokus requested.");
     }
+    
+    var preventMetaData = namedArgs.Exists("PMD");
+    createSudokuImages();
 }
 
 function Cell(sudoku, row, column) {
@@ -557,11 +634,105 @@ function $erasePortion($sudoku, portion) {
         }
         
         break;
+    case PER_ROW :
+        var unit = [];
+        for (var i = 0; i < 9; i++) {
+            unit.clear();
+            for (var j = 0; j < 9; j++)
+                unit.push($sudoku[$CENTRAL][i][j]);
+            
+            if ("size" in portion)
+                var x = portion.size;
+            else
+                var x = Math.randomEx(portion.lBound, portion.uBound);
+            
+            $sudoku[$CENTRAL][i][2].foo = $sudoku[$CENTRAL][i][6].foo = x;
+            eraseUnit();
+        }
+        
+        eraseRows($sudoku[$UPPER_LEFT]);
+        eraseRows($sudoku[$LOWER_LEFT], 1);
+        eraseRows($sudoku[$UPPER_RIGHT], 0, 1);
+        eraseRows($sudoku[$LOWER_RIGHT], 1, 1);
+        break;
+    case PER_COLUMN :
+        var unit = [];
+        for (var j = 0; j < 9; j++) {
+            unit.clear();
+            for (var i = 0; i < 9; i++)
+                unit.push($sudoku[$CENTRAL][i][j]);
+            
+            if ("size" in portion)
+                var x = portion.size;
+            else
+                var x = Math.randomEx(portion.lBound, portion.uBound);
+            
+            $sudoku[$CENTRAL][2][j].foo = $sudoku[$CENTRAL][6][j].foo = x;
+            eraseUnit();
+        }
+        
+        eraseColumns($sudoku[$UPPER_LEFT]);
+        eraseColumns($sudoku[$UPPER_RIGHT], 1);
+        eraseColumns($sudoku[$LOWER_LEFT], 0, 1);
+        eraseColumns($sudoku[$LOWER_RIGHT], 1, 1);
+        break;
     }
     
     function eraseUnit() {
         for (var i = 0; i < x; i++)
             unit.pick().blank = true;
+    }
+    
+    function eraseRows($grid) {
+        for (var i = 0; i < 9; i++) {
+            unit.clear();
+            if (arguments[1] ? (i > 2) : (i < 6)) {
+                for (var j = 0; j < 9; j++)
+                    unit.push($grid[i][j]);
+                
+                if ("size" in portion)
+                    x = portion.size;
+                else
+                    x = Math.randomEx(portion.lBound, portion.uBound);
+            }
+            else {
+                x = $grid[i][arguments[2] ? 0 : 8].foo;
+                for (var j = 0; j < 9; j++) {
+                    if (arguments[2] ? (j > 2) : (j < 6))
+                        unit.push($grid[i][j]);
+                    else if ($grid[i][j].blank)
+                        x--;
+                }
+            }
+            
+            eraseUnit();
+        }
+    }
+    
+    function eraseColumns($grid) {
+        for (var j = 0; j < 9; j++) {
+            unit.clear();
+            if (arguments[1] ? (j > 2) : (j < 6)) {
+                for (var i = 0; i < 9; i++)
+                    unit.push($grid[i][j]);
+                
+                if ("size" in portion)
+                    x = portion.size;
+                else
+                    x = Math.randomEx(portion.lBound, portion.uBound);
+            }
+            else {
+                x = $grid[arguments[2] ? 0 : 8][j].foo;
+                for (var i = 0; i < 9; i++) {
+                    if (arguments[2] ? (i > 2) : (i < 6))
+                        unit.push($grid[i][j]);
+                    else if ($grid[i][j].blank)
+                        x--;
+                }
+            }
+            
+            eraseUnit();
+        }
     }
 }
 
@@ -602,7 +773,7 @@ function outputRow(textStream, row) {
         if ((i != 0) && (i % 3 == 0))
             textStream.Write("|");
         
-        textStream.Write(row[i].blank ? "0" : row[i].value);
+        textStream.Write((row[i].blank && (!outputSolution)) ? "0" : row[i].value);
     }
 }
 
@@ -682,6 +853,458 @@ function $outputSudoku(textStream, $sudoku) {
     }
 }
 
+function createSudokuImages() {
+    if (!sudokus)
+        return;
+    
+    if ((!sudokus.length) && (!$sudokus.length))
+        return;
+    
+    fileName = fso.GetAbsolutePathName(fileName);
+    
+    var powerPoint = WSH.CreateObject("PowerPoint.Application");
+    var presentation = powerPoint.Presentations.Add(0);
+    var slide = presentation.Slides.Add(1, 12);
+    
+    if (!includeSolution) {
+        if ((sudokus.length == 1) && ($sudokus.length == 0)) {
+            createSudokuImage(sudokus[0], fileName);
+            presentation.Close();
+            powerPoint.Quit();
+            writeMetaData();
+            return;
+        }
+        else if (($sudokus.length == 1) && (sudokus.length == 0)) {
+            $createSudokuImage($sudokus[0], fileName);
+            presentation.Close();
+            powerPoint.Quit();
+            writeMetaData();
+            return;
+        }
+    }
+    
+    var baseName = fso.GetBaseName(fileName);
+    var parentFolder = fso.GetParentFolderName(fileName);
+    var baseFrame = null;
+    var ip = WSH.CreateObject("WIA.ImageProcess");
+    var n = sudokus.length + $sudokus.length;
+    for (var i = 0; i < n; i++) {
+        if (includeSolution) {
+            var tempFile1 = fso.BuildPath(parentFolder, baseName + "." + (i * 2) + ".png");
+            var tempFile2 = fso.BuildPath(parentFolder, baseName + "." + (i * 2 + 1) + ".png");
+            if (i < sudokus.length) {
+                createSudokuImage(sudokus[i], tempFile1, false);
+                createSudokuImage(sudokus[i], tempFile2, true);
+            }
+            else {
+                $createSudokuImage($sudokus[i - sudokus.length], tempFile1, false);
+                $createSudokuImage($sudokus[i - sudokus.length], tempFile2, true);
+            }
+            
+            loadFrame(tempFile1);
+            loadFrame(tempFile2);
+        }
+        else {
+            var tempFile = fso.BuildPath(parentFolder, baseName + "." + i + ".png");
+            if (i < sudokus.length)
+                createSudokuImage(sudokus[i], tempFile, false);
+            else
+                $createSudokuImage($sudokus[i - sudokus.length], tempFile, false);
+            
+            loadFrame(tempFile);
+        }
+    }
+    
+    presentation.Close();
+    powerPoint.Quit();
+    
+    ip.Filters.Add(ip.FilterInfos("Convert").FilterID);
+    ip.Filters(ip.Filters.Count).Properties("FormatID") = wiaFormatTIFF;
+    
+    var tiff = ip.Apply(baseFrame);
+    tiff.SaveFile(fileName);
+    
+    if (includeSolution)
+        n *= 2;
+    
+    for (var i = 0; i < n; i++) {
+        var tempFile = fso.BuildPath(parentFolder, baseName + "." + i + ".png");
+        fso.DeleteFile(tempFile);
+    }
+    
+    writeMetaData();
+    
+    function saveShapeAsImage(shape, fileName) {
+        var format;
+        var fileExtension = fso.GetExtensionName(fileName);
+        switch (fileExtension) {
+        case "bmp" :
+        case "dib" :
+            format = 3;
+            break;
+        case "png" :
+            format = 2;
+            break;
+        case "gif" :
+            format = 0;
+            break;
+        case "jpg" :
+        case "jpeg" :
+        case "jpe" :
+        case "jfif" :
+            format = 1;
+            break;
+        case "wmf" :
+            format = 4;
+            break;
+        case "emf" :
+            format = 5;
+            break;
+        case "tif" :
+        case "tiff" :
+            beep(WSH.StdErr);
+            WSH.StdErr.WriteLine("[error] Saving sudokus in TIFF image format is not currently supported.");
+            return;
+        }
+        
+        shape.Export(fileName, format);
+    }
+    
+    function createSudokuImage(sudoku, fileName, solution) {
+        var table = createSudokuTable();
+        
+        for (var i = 0; i < 9; i++) {
+            for (var j = 0; j < 9; j++) {
+                var c = sudoku[i][j];
+                if ((!solution) && c.blank)
+                    continue;
+                
+                var tf = table.Cell(i + 1, j + 1).Shape.TextFrame;
+                tf.HorizontalAnchor = 2;
+                tf.VerticalAnchor = 3;
+                tf.TextRange.Text = c.value;
+                tf.TextRange.Font.Size = 24;
+                if (c.blank)
+                    tf.TextRange.Font.Color.RGB = RGB_GREEN;
+            }
+        }
+        
+        saveShapeAsImage(table.Parent, fileName);
+        table.Parent.Delete();
+        
+        function createSudokuTable() {
+            var table = slide.Shapes.AddTable(9, 9, -1, -1, 340, 340).Table;
+            
+            table.ApplyStyle("{5940675A-B579-460E-94D1-54222C63F5DA}");
+            table.TableDirection = 1;
+            
+            table.Columns.Item(1).Cells.Borders.Item(ppBorderLeft).Weight = 3;
+            table.Columns.Item(3).Cells.Borders.Item(ppBorderRight).Weight = 3;
+            table.Columns.Item(7).Cells.Borders.Item(ppBorderLeft).Weight = 3;
+            table.Columns.Item(9).Cells.Borders.Item(ppBorderRight).Weight = 3;
+            
+            table.Rows.Item(1).Cells.Borders.Item(ppBorderTop).Weight = 3;
+            table.Rows.Item(3).Cells.Borders.Item(ppBorderBottom).Weight = 3;
+            table.Rows.Item(7).Cells.Borders.Item(ppBorderTop).Weight = 3;
+            table.Rows.Item(9).Cells.Borders.Item(ppBorderBottom).Weight = 3;
+            
+            return table;
+        }
+    }
+    
+    function $createSudokuImage($sudoku, fileName, solution) {
+        var $table = $createSudokuTable();
+        
+        for (var i = 1; i <= 6; i++) {
+            for (var j = 1; j <= 21; j++) {
+                if ((9 < j) && (j < 13))
+                    continue;
+                
+                var c = (j <= 9) ? $sudoku[$UPPER_LEFT][i - 1][j - 1] :
+                            $sudoku[$UPPER_RIGHT][i - 1][j - 13];
+                if ((!solution) && c.blank)
+                    continue;
+                
+                fillCell($table.Cell(i, j), c);
+            }
+        }
+        
+        for (var i = 7; i <= 9; i++) {
+            for (var j = 1; j <= 6; j++) {
+                var c = $sudoku[$UPPER_LEFT][i - 1][j - 1];
+                if ((!solution) && c.blank)
+                    continue;
+                
+                fillCell($table.Cell(i, j), c);
+            }
+            
+            for (var j = 7; j <= 15; j++) {
+                var c = $sudoku[$CENTRAL][i - 7][j - 7];
+                if ((!solution) && c.blank)
+                    continue;
+                
+                fillCell($table.Cell(i, j), c);
+            }
+            
+            for (var j = 16; j <= 21; j++) {
+                var c = $sudoku[$UPPER_RIGHT][i - 1][j - 13];
+                if ((!solution) && c.blank)
+                    continue;
+                
+                fillCell($table.Cell(i, j), c);
+            }
+        }
+        
+        for (var i = 10; i <= 12; i++) {
+            for (var j = 7; j <= 15; j++) {
+                var c = $sudoku[$CENTRAL][i - 7][j - 7];
+                if ((!solution) && c.blank)
+                    continue;
+                
+                fillCell($table.Cell(i, j), c);
+            }
+        }
+        
+        for (var i = 13; i <= 15; i++) {
+            for (var j = 1; j <= 6; j++) {
+                var c = $sudoku[$LOWER_LEFT][i - 13][j - 1];
+                if ((!solution) && c.blank)
+                    continue;
+                
+                fillCell($table.Cell(i, j), c);
+            }
+            
+            for (var j = 7; j <= 15; j++) {
+                var c = $sudoku[$CENTRAL][i - 7][j - 7];
+                if ((!solution) && c.blank)
+                    continue;
+                
+                fillCell($table.Cell(i, j), c);
+            }
+            
+            for (var j = 16; j <= 21; j++) {
+                var c = $sudoku[$LOWER_RIGHT][i - 13][j - 13];
+                if ((!solution) && c.blank)
+                    continue;
+                
+                fillCell($table.Cell(i, j), c);
+            }
+        }
+        
+        for (var i = 16; i <= 21; i++) {
+            for (var j = 1; j <= 21; j++) {
+                if ((9 < j) && (j < 13))
+                    continue;
+                
+                var c = (j <= 9) ? $sudoku[$LOWER_LEFT][i - 13][j - 1] :
+                            $sudoku[$LOWER_RIGHT][i - 13][j - 13];
+                if ((!solution) && c.blank)
+                    continue;
+                
+                fillCell($table.Cell(i, j), c);
+            }
+        }
+        
+        saveShapeAsImage($table.Parent, fileName);
+        $table.Parent.Delete();
+        
+        function fillCell(tc, c) {
+            var tf = tc.Shape.TextFrame;
+            tf.HorizontalAnchor = 2;
+            tf.VerticalAnchor = 3;
+            tf.TextRange.Text = c.value;
+            tf.TextRange.Font.Size = 18;
+            if (c.blank)
+                tf.TextRange.Font.Color.RGB = RGB_GREEN;
+        }
+        
+        function $createSudokuTable() {
+            var $table = slide.Shapes.AddTable(21, 21, -1, -1, 624, 624).Table;
+            
+            $table.ApplyStyle("{5940675A-B579-460E-94D1-54222C63F5DA}");
+            $table.TableDirection = 1;
+            
+            $table.Columns.Item(1).Cells.Borders.Item(ppBorderLeft).Weight = 3;
+            $table.Columns.Item(3).Cells.Borders.Item(ppBorderRight).Weight = 3;
+            $table.Columns.Item(7).Cells.Borders.Item(ppBorderLeft).Weight = 3;
+            $table.Columns.Item(9).Cells.Borders.Item(ppBorderRight).Weight = 3;
+            $table.Columns.Item(13).Cells.Borders.Item(ppBorderLeft).Weight = 3;
+            $table.Columns.Item(15).Cells.Borders.Item(ppBorderRight).Weight = 3;
+            $table.Columns.Item(19).Cells.Borders.Item(ppBorderLeft).Weight = 3;
+            $table.Columns.Item(21).Cells.Borders.Item(ppBorderRight).Weight = 3;
+            
+            $table.Rows.Item(1).Cells.Borders.Item(ppBorderTop).Weight = 3;
+            $table.Rows.Item(3).Cells.Borders.Item(ppBorderBottom).Weight = 3;
+            $table.Rows.Item(7).Cells.Borders.Item(ppBorderTop).Weight = 3;
+            $table.Rows.Item(9).Cells.Borders.Item(ppBorderBottom).Weight = 3;
+            $table.Rows.Item(13).Cells.Borders.Item(ppBorderTop).Weight = 3;
+            $table.Rows.Item(15).Cells.Borders.Item(ppBorderBottom).Weight = 3;
+            $table.Rows.Item(19).Cells.Borders.Item(ppBorderTop).Weight = 3;
+            $table.Rows.Item(21).Cells.Borders.Item(ppBorderBottom).Weight = 3;
+            
+            var col = $table.Columns.Item(10).Cells;
+            for (var i = 1; i <= 6; i++)
+                llg_removeBorders(col.Item(i));
+            
+            for (var i = 16; i <= 21; i++)
+                ulg_removeBorders(col.Item(i));
+            
+            col = $table.Columns.Item(11).Cells;
+            for (var i = 1; i <= 6; i++) {
+                col.Item(i).Borders.Item(ppBorderTop).Weight = 0;
+                col.Item(i).Borders.Item(ppBorderTop).Visible = 0;
+                col.Item(i).Shape.Fill.BackColor.RGB = RGB_GRAY;
+            }
+            
+            for (var i = 16; i <= 21; i++) {
+                col.Item(i).Borders.Item(ppBorderBottom).Weight = 0;
+                col.Item(i).Borders.Item(ppBorderBottom).Visible = 0;
+                col.Item(i).Shape.Fill.BackColor.RGB = RGB_GRAY;
+            }
+            
+            col = $table.Columns.Item(12).Cells;
+            for (var i = 1; i <= 6; i++)
+                lrg_removeBorders(col.Item(i));
+            
+            for (var i = 16; i <= 21; i++)
+                urg_removeBorders(col.Item(i));
+            
+            col = $table.Rows.Item(10).Cells;
+            for (var i = 1; i <= 6; i++)
+                urg_removeBorders(col.Item(i));
+            
+            for (var i = 16; i <= 21; i++)
+                ulg_removeBorders(col.Item(i));
+            
+            col = $table.Rows.Item(11).Cells;
+            for (var i = 1; i <= 6; i++) {
+                col.Item(i).Borders.Item(ppBorderLeft).Weight = 0;
+                col.Item(i).Borders.Item(ppBorderLeft).Visible = 0;
+                col.Item(i).Shape.Fill.BackColor.RGB = RGB_GRAY;
+            }
+            
+            for (var i = 16; i <= 21; i++) {
+                col.Item(i).Borders.Item(ppBorderRight).Weight = 0;
+                col.Item(i).Borders.Item(ppBorderRight).Visible = 0;
+                col.Item(i).Shape.Fill.BackColor.RGB = RGB_GRAY;
+            }
+            
+            col = $table.Rows.Item(12).Cells;
+            for (var i = 1; i <= 6; i++)
+                lrg_removeBorders(col.Item(i));
+            
+            for (var i = 16; i <= 21; i++)
+                llg_removeBorders(col.Item(i));
+            
+            return $table;
+            
+            function ulg_removeBorders(c) {
+                c.Borders.Item(ppBorderRight).Weight = 0;
+                c.Borders.Item(ppBorderBottom).Weight = 0;
+                c.Borders.Item(ppBorderRight).Visible = 0;
+                c.Borders.Item(ppBorderBottom).Visible = 0;
+                c.Shape.Fill.BackColor.RGB = RGB_GRAY;
+            }
+
+            function urg_removeBorders(c) {
+                c.Borders.Item(ppBorderLeft).Weight = 0;
+                c.Borders.Item(ppBorderBottom).Weight = 0;
+                c.Borders.Item(ppBorderLeft).Visible = 0;
+                c.Borders.Item(ppBorderBottom).Visible = 0;
+                c.Shape.Fill.BackColor.RGB = RGB_GRAY;
+            }
+
+            function llg_removeBorders(c) {
+                c.Borders.Item(ppBorderTop).Weight = 0;
+                c.Borders.Item(ppBorderRight).Weight = 0;
+                c.Borders.Item(ppBorderTop).Visible = 0;
+                c.Borders.Item(ppBorderRight).Visible = 0;
+                c.Shape.Fill.BackColor.RGB = RGB_GRAY;
+            }
+
+            function lrg_removeBorders(c) {
+                c.Borders.Item(ppBorderLeft).Weight = 0;
+                c.Borders.Item(ppBorderTop).Weight = 0;
+                c.Borders.Item(ppBorderLeft).Visible = 0;
+                c.Borders.Item(ppBorderTop).Visible = 0;
+                c.Shape.Fill.BackColor.RGB = RGB_GRAY;
+            }
+        }
+    }
+    
+    function loadFrame(fileName) {
+        var frame = WSH.CreateObject("WIA.ImageFile");
+        frame.LoadFile(fileName);
+        
+        if (baseFrame) {
+            ip.Filters.Add(ip.FilterInfos("Frame").FilterID);
+            ip.Filters(ip.Filters.Count).Properties("ImageFile") = frame;
+        }
+        else
+            baseFrame = frame;
+    }
+    
+    function writeMetaData() {
+        if (preventMetaData)
+            return;
+        
+        if (!fso.FileExists(fileName))
+            return;
+        
+        var n = sudokus.length;
+        if (n) {
+            try {
+                var ts = fso.OpenTextFile(fileName + ":Sudoku", 2, true);
+                
+                for (var i = 0; i < n; i++) {
+                    if (i)
+                        ts.WriteBlankLines(1);
+                    
+                    outputSolution = false;
+                    outputSudoku(ts, sudokus[i]);
+                    
+                    if (includeSolution) {
+                        ts.WriteBlankLines(1);
+                        outputSolution = true;
+                        outputSudoku(ts, sudokus[i]);
+                    }
+                }
+                
+                ts.Close();
+            }
+            catch (err) {}
+        }
+        
+        n = $sudokus.length;
+        if (n) {
+            try {
+                var ts = fso.OpenTextFile(fileName + ":Samurai", 2, true);
+                
+                for (var i = 0; i < n; i++) {
+                    if (i)
+                        ts.WriteBlankLines(1);
+                    
+                    outputSolution = false;
+                    $outputSudoku(ts, $sudokus[i]);
+                    
+                    if (includeSolution) {
+                        ts.WriteBlankLines(1);
+                        outputSolution = true;
+                        $outputSudoku(ts, $sudokus[i]);
+                    }
+                }
+                
+                ts.Close();
+            }
+            catch (err) {}
+        }
+    }
+}
+
 function beep(textStream) {
     textStream.Write(String.fromCharCode(7));
+}
+
+function showError(message) {
+    wshShell.Popup(message, 0, "Sudoku Generator", 16);
 }
