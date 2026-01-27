@@ -68,9 +68,19 @@ All parameters are optional. They're explained below.
 - `/NS`: Set this parameter to the number of **normal sudokus** to be generated. By default, only one normal sudoku is generated.
 - `/NG`: This parameter is required if you wish to generate **Samurai** sudokus. Set it to the number of **Samurai sudokus** to be generated. By default, no Saumrai sudokus are generated.
 - `/EP`: Typically, setting this parameter is neccessary because, by default, the generated sudokus would be filled completely and contain no blank cells. Thus, to generate "usable" sudokus, you must explicitly specify the amount of cells to be erased using this parameter. It can can be simply set to an integer value indicating the number of blank cells in each generated sudoku. Alternatively, you can set this parameter to a range, like `22-44`. In this case, for each of the sudokus to be generated, the system will generate a random number within the specified range, and that random number will then determine the number of blank cells in that sudoku. Moreover, you can add a **scope suffix** at the end of this parameter's value so the specified amount of blank cells will be considered within smaller regions of the sudoku rather than within the entire sudoku. For example, if you specify `6R`, the program will make 6 blank cells within each row of the sudoku. The following scope suffixes are supported. Note that they must be specefied in upper-case, and there must be no space between the integer/range value and the suffix (e.g. `7 R` is not allowed).
-    + `B`: There will be *k* blank cells **per each 3x3 block**. In this case, *k* can be at most 9.
-    + `R`: There will be *k* blank cells **per each row**. In this case, *k* can be at most 9.
-    + `C`: There will be *k* blank cells **per each column**. In this case, *k* can be at most 9.
-    + `G`: For **Samurai sudokus**, the program will make *k* blank cells **per each overlapping 9x9 grid**. For normal sudokus, setting this suffix has no effect, and there will be *k* blank cells within the entire sudoku. For technical reasons, in case of specifying the `G` suffix, *k* can be **at most 72**.
+    + `B`: There will be *k* blank cells **per each 3x3 block**. In this case, *k* must be at most 9.
+    + `R`: There will be *k* blank cells **per each row**. In this case, *k* must be at most 9.
+    + `C`: There will be *k* blank cells **per each column**. In this case, *k* must be at most 9.
+    + `G`: For **Samurai sudokus**, the program will make *k* blank cells **per each overlapping 9x9 grid**. For normal sudokus, setting this suffix has no effect, and there will be *k* blank cells within the entire sudoku. For technical reasons, in case of specifying the `G` suffix, *k* must be **at most 72**.
 - `/IS`: If this parameter is set, each of the sudokus in the output will be followed by its corresponding solution (answer).
 - `OutputFileName`: By default, the program will output the generated sudokus as **plain-text** to **the Standard Output Stream**. If you want to store the sudokus in a file, you can **specify a file name** on the command-line. If the specified file name has one of **the extensions `.bmp`, `.dib`, `.png`, `.gif`, `.jpg`, `.jpeg`, `.jpe`, `.jfif`, `.tif`, `.tiff`, `.wmf`, or `.emf`**, then the sudokus will be stored **as raster image**. Otherwise, they will be stored **as plain-text**.
+
+### Saving the output sudokus as image files
+When saving the generated sudokus as image files, take the following into account:
+
+If the `/IS` parameter is not set and a single sudoku is requested (either a normal sudoku or a Samurai sudoku), then the extension of the specified output file name must be either `.bmp`, `.dib`, `.png`, `.gif`, `.jpg`, `.jpeg`, `.jpe`, `.jfif`, `.wmf`, or `.emf`.
+
+If either `/IS` parameter is set or the normal and Samurai sudokus requested in total is more than one, then the extension of the output file name must be certainly `.tif` or `.tiff`. In that case, **a multi-page TIFF file** will be created, and each of the sudokus generated will be placed in an individual page of the TIFF file.
+
+> [!NOTE]
+> For the program to be able to save the generated sudokus as image files, you **must have Microsoft Office PowerPoint installed**. In addition, in cases where a multi-page TIFF file needs to be created, your computer **must be running Windows Vista or higher**, or the operation fails.
